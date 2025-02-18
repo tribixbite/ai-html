@@ -77,20 +77,64 @@
             </div>
 
             <div id="videoSection" style="display: none;">
-                <div class="flex gap-2 mb-4">
-                    <button 
-                        id="exportAll" 
-                        class="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg transition-colors"
-                    >
-                        Export All Data
-                    </button>
-                    <button 
-                        id="exportUrls" 
-                        class="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 rounded-lg transition-colors"
-                    >
-                        Export URLs
-                    </button>
-                </div>
+                <div class="space-y-4">
+                    <div class="flex flex-wrap gap-4 items-center">
+                        <div class="flex items-center gap-2">
+                            <select id="languageFilter" class="px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-blue-500">
+                                <option value="">All Languages</option>
+                                <option value="en">English</option>
+                                <option value="es">Spanish</option>
+                                <option value="fr">French</option>
+                                <option value="it">Italian</option>
+                                <option value="zh">Chinese</option>
+                            </select>
+                        </div>
+                        
+                        <div class="flex items-center gap-2">
+                            <input 
+                                type="number" 
+                                id="maxViews" 
+                                placeholder="Max Views" 
+                                class="w-32 px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-blue-500"
+                            >
+                        </div>
+                        
+                        <div class="flex items-center gap-2">
+                            <input 
+                                type="text" 
+                                id="removeText" 
+                                placeholder="Remove videos containing..." 
+                                class="px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-blue-500"
+                            >
+                            <button 
+                                id="removeBtn" 
+                                class="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+                            >
+                                Remove
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="flex gap-2">
+                        <button 
+                            id="exportAll" 
+                            class="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg transition-colors"
+                        >
+                            Export All Data
+                        </button>
+                        <button 
+                            id="exportUrls" 
+                            class="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 rounded-lg transition-colors"
+                        >
+                            Export URLs
+                        </button>
+                        <button 
+                            id="exportScript" 
+                            class="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors"
+                        >
+                            Export yt-dlp Script
+                        </button>
+                    </div>
 
                 <div class="overflow-x-auto">
                     <table class="w-full border-collapse">
@@ -116,8 +160,114 @@
     <script>
         const state = {
             videos: [],
+            filteredVideos: [],
             loading: false
         };
+
+        // Language detection patterns
+        const languagePatterns = {
+            en: /^[a-zA-Z0-9\s!?'"()-]*$/,
+            es: /[áéíóúñ¡¿]/i,
+            fr: /[éèêëàâîïôûùüç]/i,
+            it: /[àèéìíîòóùú]/i,
+            zh: /[\u4e00-\u9fff]/
+        };
+
+        function detectLanguage(title) {
+            // Check for obvious markers first
+            if (title.includes('Let\'s') || title.includes('&#39;s')) return 'en';
+            if (title.includes('¡') || title.includes('¿')) return 'es';
+            if (title.includes('Лучшие') || title.includes('видео')) return 'ru';
+            
+            // Then check patterns
+            for (const [lang, pattern] of Object.entries(languagePatterns)) {
+                if (pattern.test(title)) return lang;
+            }
+            
+            // Default to English if no specific patterns match
+            return 'en';
+        }
+
+        function applyFilters() {
+            const languageFilter = document.getElementById('languageFilter').value;
+            const maxViews = document.getElementById('maxViews').value;
+            const removeText = document.getElementById('removeText').value.toLowerCase();
+
+            state.filteredVideos = state.videos.filter(video => {
+                // Language filter
+                if (languageFilter && detectLanguage(video.title) !== languageFilter) {
+                    return false;
+                }
+
+                // Max views filter
+                if (maxViews) {
+                    const viewCount = parseInt(video.viewCount.replace(/,/g, ''));
+                    if (viewCount > parseInt(maxViews)) {
+                        return false;
+                    }
+                }
+
+                // Remove text filter
+                if (removeText && video.title.toLowerCase().includes(removeText)) {
+                    return false;
+                }
+
+                return true;
+            });
+
+            updateVideoTable();
+        }
+
+        function updateVideoTable() {
+            console.log('Updating video table with videos:', state.filteredVideos);
+            const tbody = document.getElementById('videoTable');
+            const videoSection = document.getElementById('videoSection');
+            
+            if (state.filteredVideos.length === 0) {
+                console.log('No videos to display');
+                tbody.innerHTML = '<tr><td colspan="4" class="p-3 text-center">No videos match the current filters</td></tr>';
+                return;
+            }
+
+            videoSection.style.display = 'block';
+            tbody.innerHTML = state.filteredVideos.map(video => `
+                <tr class="border-t border-gray-700 hover:bg-gray-700">
+                    <td class="p-3">${video.title}</td>
+                    <td class="p-3">${video.uploadDate}</td>
+                    <td class="p-3">${video.viewCount}</td>
+                    <td class="p-3">
+                        <a href="${video.url}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:text-blue-300">
+                            ${video.url}
+                        </a>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function exportYtDlpScript() {
+            const urls = state.filteredVideos.map(video => video.url);
+            const script = `#!/bin/bash
+# YouTube Download Script
+# Generated ${new Date().toLocaleString()}
+
+# Make sure yt-dlp is installed
+command -v yt-dlp >/dev/null 2>&1 || { echo "yt-dlp is required but not installed. Aborting." >&2; exit 1; }
+
+# Download videos
+${urls.map(url => `yt-dlp "${url}"`).join('\n')}
+
+echo "Download complete!"`;
+
+            const blob = new Blob([script], { type: 'text/plain' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'download_videos.sh';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+        }
 
         function showLoading(show) {
             const loadingEl = document.getElementById('loading');
