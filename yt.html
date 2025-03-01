@@ -1,15 +1,24 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta property="og:title" content="YouTube Channel Explorer">
+    <meta property="og:description" content="Explore and filter YouTube channel videos with advanced search capabilities">
+    <meta property="og:image" content="https://s3.us-east-2.amazonaws.com/tribixbite/sx/ytdlsite.png">
+    <meta property="og:url" content="">
+    <meta property="og:type" content="website">
+    <meta name="theme-color" content="#FF0000">
     <title>YouTube Channel Explorer</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js"></script>
     <style>
         .dropdown {
             max-height: 200px;
             overflow-y: auto;
         }
+
         .loading {
             position: fixed;
             top: 0;
@@ -22,6 +31,7 @@
             align-items: center;
             z-index: 1000;
         }
+
         .loading-spinner {
             border: 4px solid #f3f3f3;
             border-top: 4px solid #3498db;
@@ -30,57 +40,79 @@
             height: 50px;
             animation: spin 1s linear infinite;
         }
+
         @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
         }
+
         /* Custom hidden class with !important to override Tailwind */
         .hidden {
             display: none !important;
         }
+
         /* Override Tailwind's display utilities for our show/hide functionality */
         .show {
             display: block !important;
         }
+
+        .sort-arrow {
+            display: inline-block;
+            width: 1em;
+            opacity: 0.5;
+        }
+        
+        th[data-sort].active .sort-arrow {
+            opacity: 1;
+        }
     </style>
 </head>
+
 <body class="bg-gray-900 text-gray-100 min-h-screen">
     <div id="app" class="container mx-auto px-4 py-8">
         <div class="bg-gray-800 rounded-lg shadow-lg p-6">
             <h1 class="text-2xl font-bold mb-6">YouTube Channel Explorer</h1>
-            
+
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                 <div class="relative">
                     <div class="flex gap-2">
-                        <input 
-                            type="text" 
-                            id="channelName" 
-                            placeholder="Channel Name" 
-                            class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-blue-500"
-                        >
-                        <button 
-                            id="searchBtn" 
-                            class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
-                        >
+                        <input type="text" id="channelName" placeholder="Channel Name"
+                            class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-blue-500">
+                        <button id="searchBtn"
+                            class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors">
                             Search
                         </button>
                     </div>
-                    <div id="searchResults" style="display: none;" class="absolute z-10 w-full mt-1 bg-gray-700 border border-gray-600 rounded-md shadow-lg dropdown max-h-60 overflow-y-auto"></div>
+                    <div id="searchResults" style="display: none;"
+                        class="absolute z-10 w-full mt-1 bg-gray-700 border border-gray-600 rounded-md shadow-lg dropdown max-h-60 overflow-y-auto">
+                    </div>
                 </div>
-                
-                <input 
-                    type="password" 
-                    id="apiKey" 
-                    placeholder="API Key" 
-                    class="px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-blue-500"
-                >
+
+                <div class="flex flex-col">
+                    <input type="password" id="apiKey" placeholder="API Key"
+                        class="px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-blue-500">
+                </div>
+            </div>
+
+            <div class="flex gap-2 mb-6">
+                <label for="importCsv"
+                    class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors cursor-pointer">
+                    Import CSV
+                </label>
+                <input type="file" id="importCsv" accept=".csv" class="hidden">
             </div>
 
             <div id="videoSection" style="display: none;">
                 <div class="space-y-4">
                     <div class="flex flex-wrap gap-4 items-center">
                         <div class="flex items-center gap-2">
-                            <select id="languageFilter" class="px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-blue-500">
+                            <select id="languageFilter"
+                                class="px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-blue-500">
                                 <option value="">All Languages</option>
                                 <option value="en">English</option>
                                 <option value="es">Spanish</option>
@@ -89,45 +121,41 @@
                                 <option value="zh">Chinese</option>
                             </select>
                         </div>
-                        
+
                         <div class="flex items-center gap-2">
-                            <input 
-                                type="number" 
-                                id="limitRows" 
-                                placeholder="Limit Rows" 
-                                class="w-32 px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-blue-500"
-                            >
+                            <input type="number" id="limitRows" placeholder="Limit Rows"
+                                class="w-32 px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-blue-500">
                         </div>
-                        
+
                         <div class="flex items-center gap-2">
-                            <input 
-                                type="text" 
-                                id="includeText" 
-                                placeholder="Include (comma separated)" 
-                                class="px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-blue-500"
-                            >
+                            <input type="text" id="includeText" placeholder="Include (comma separated)"
+                                class="px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-blue-500">
                         </div>
-                        
+
                         <div class="flex items-center gap-2">
-                            <input 
-                                type="text" 
-                                id="removeText" 
-                                placeholder="Remove videos containing..." 
-                                class="px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-blue-500"
-                            >
-                            <button 
-                                id="removeBtn" 
-                                class="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
-                            >
+                            <input type="text" id="removeText" placeholder="Remove videos containing..."
+                                class="px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-blue-500">
+                            <button id="removeBtn"
+                                class="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg transition-colors">
                                 Remove
                             </button>
+                        </div>
+
+                        <div class="flex items-center gap-2">
+                            <input type="text" id="minLength" placeholder="Min Length (HH:MM:SS)"
+                                class="w-40 px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-blue-500">
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <input type="text" id="maxLength" placeholder="Max Length (HH:MM:SS)"
+                                class="w-40 px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-blue-500">
                         </div>
                     </div>
 
                     <div class="flex flex-wrap gap-4 items-center bg-gray-700 p-4 rounded-lg">
                         <h3 class="text-lg font-semibold w-full">yt-dlp Options</h3>
                         <div class="flex items-center gap-2">
-                            <select id="maxResolution" class="px-4 py-2 bg-gray-600 border border-gray-500 rounded-lg focus:outline-none focus:border-blue-500">
+                            <select id="maxResolution"
+                                class="px-4 py-2 bg-gray-600 border border-gray-500 rounded-lg focus:outline-none focus:border-blue-500">
                                 <option value="best">Best Quality</option>
                                 <option value="1080">1080p</option>
                                 <option value="720">720p</option>
@@ -137,353 +165,849 @@
                         </div>
                         <div class="flex items-center gap-2">
                             <label class="flex items-center gap-2">
-                                <input type="checkbox" id="includeSubtitles" checked class="w-4 h-4 bg-gray-600 border-gray-500 rounded">
+                                <input type="checkbox" id="includeSubtitles" checked
+                                    class="w-4 h-4 bg-gray-600 border-gray-500 rounded">
                                 Include Subtitles
                             </label>
                         </div>
                         <div class="flex items-center gap-2">
                             <label class="flex items-center gap-2">
-                                <input type="checkbox" id="includeChannelName" class="w-4 h-4 bg-gray-600 border-gray-500 rounded">
+                                <input type="checkbox" id="includeChannelName"
+                                    class="w-4 h-4 bg-gray-600 border-gray-500 rounded">
                                 Include Channel Name
                             </label>
                         </div>
                     </div>
 
                     <div class="flex gap-2">
-                        <button 
-                            id="exportAll" 
-                            class="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg transition-colors"
-                        >
-                            Export All Data
+                        <button id="exportAll"
+                            class="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg transition-colors">
+                            Export Table Data
                         </button>
-                        <button 
-                            id="exportUrls" 
-                            class="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 rounded-lg transition-colors"
-                        >
-                            Export URLs
+                        <button id="exportUrls"
+                            class="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 rounded-lg transition-colors">
+                            Export URLs Only
                         </button>
-                        <button 
-                            id="exportScript" 
-                            class="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors"
-                        >
+                        <button id="exportScript"
+                            class="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors">
                             Export yt-dlp Script
                         </button>
                     </div>
 
-                <div class="overflow-x-auto">
-                    <table class="w-full border-collapse">
-                        <thead>
-                            <tr class="bg-gray-700">
-                                <th class="p-3 text-left">Title</th>
-                                <th class="p-3 text-left">Upload Date</th>
-                                <th class="p-3 text-left">Views</th>
-                                <th class="p-3 text-left">URL</th>
-                            </tr>
-                        </thead>
-                        <tbody id="videoTable"></tbody>
-                    </table>
+                    <div class="overflow-x-auto">
+                        <table class="w-full border-collapse">
+                            <thead>
+                                <tr class="bg-gray-700">
+                                    <th class="p-3 text-left cursor-pointer hover:bg-gray-600" data-sort="title">
+                                        Title <span class="sort-arrow"></span>
+                                    </th>
+                                    <th class="p-3 text-left cursor-pointer hover:bg-gray-600" data-sort="date">
+                                        Upload Date <span class="sort-arrow">↓</span>
+                                    </th>
+                                    <th class="p-3 text-left cursor-pointer hover:bg-gray-600" data-sort="views">
+                                        Views <span class="sort-arrow"></span>
+                                    </th>
+                                    <th class="p-3 text-left cursor-pointer hover:bg-gray-600" data-sort="duration">
+                                        Duration <span class="sort-arrow"></span>
+                                    </th>
+                                    <th class="p-3 text-left">URL</th>
+                                </tr>
+                            </thead>
+                            <tbody id="videoTable"></tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
 
-    <div id="loading" class="loading hidden">
-        <div class="loading-spinner"></div>
-    </div>
+        <div id="loading" class="loading hidden">
+            <div class="loading-spinner"></div>
+        </div>
 
-    <script>
-        const state = {
-            videos: [],
-            filteredVideos: [],
-            loading: false
-        };
+        <div id="fab-menu" class="fixed bottom-4 right-4">
+            <button id="fab-button" 
+                class="w-12 h-12 bg-blue-600 rounded-full shadow-lg flex items-center justify-center hover:bg-blue-700 transition-colors focus:outline-none">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+                </svg>
+            </button>
+            <div id="fab-content" class="absolute bottom-14 right-0 bg-gray-800 rounded-lg shadow-xl p-4 hidden">
+                <a href="https://console.cloud.google.com/apis/dashboard?pli=1" 
+                   target="_blank" 
+                   rel="noopener noreferrer"
+                   class="text-blue-400 hover:text-blue-300 whitespace-nowrap flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path>
+                    </svg>
+                    Get API Key
+                </a>
+            </div>
+        </div>
 
-        // Language detection patterns
-        const languagePatterns = {
-            en: /^[a-zA-Z0-9\s!?'"()-]*$/,
-            es: /[áéíóúñ¡¿]/i,
-            fr: /[éèêëàâîïôûùüç]/i,
-            it: /[àèéìíîòóùú]/i,
-            zh: /[\u4e00-\u9fff]/
-        };
-
-        function detectLanguage(title) {
-            // Check for obvious markers first
-            if (title.includes('Let\'s') || title.includes('&#39;s')) return 'en';
-            if (title.includes('¡') || title.includes('¿')) return 'es';
-            if (title.includes('Лучшие') || title.includes('видео')) return 'ru';
-            
-            // Then check patterns
-            for (const [lang, pattern] of Object.entries(languagePatterns)) {
-                if (pattern.test(title)) return lang;
-            }
-            
-            // Default to English if no specific patterns match
-            return 'en';
-        }
-
-        function applyFilters() {
-            const languageFilter = document.getElementById('languageFilter').value;
-            const maxViews = document.getElementById('maxViews').value;
-            const removeText = document.getElementById('removeText').value.toLowerCase();
-
-            state.filteredVideos = state.videos.filter(video => {
-                // Language filter
-                if (languageFilter && detectLanguage(video.title) !== languageFilter) {
-                    return false;
+        <script>
+            document.addEventListener('DOMContentLoaded', () => {
+                function sanitizeFilename(title) {
+                    return title
+                        // First replace HTML entities
+                        .replace(/&amp;/g, 'and')
+                        .replace(/&#39;/g, '')
+                        .replace(/&quot;/g, '')
+                        // Keep only alphanumeric, spaces, dots, and hyphens
+                        .replace(/[^a-zA-Z0-9 .-]/g, '')
+                        // Convert spaces to hyphens
+                        .replace(/ /g, '-')
+                        // Collapse multiple hyphens into one
+                        .replace(/-+/g, '-')
+                        // Remove leading and trailing hyphens
+                        .replace(/^-/, '')
+                        .replace(/-$/, '');
                 }
+                const state = {
+                    videos: [],
+                    filteredVideos: [],
+                    loading: false,
+                    currentChannelName: '',
+                    sortColumn: 'date',
+                    sortDirection: 'desc',
+                    channelId: '',
+                    channelName: ''
+                };
 
-                // Max views filter
-                if (maxViews) {
-                    const viewCount = parseInt(video.viewCount.replace(/,/g, ''));
-                    if (viewCount > parseInt(maxViews)) {
-                        return false;
+                // Language detection patterns
+                const languagePatterns = {
+                    // en: /^[a-zA-Z0-9\s!?'"()-]*$|(?:the|and|or|in|on|at|to|for|of)\s/i,
+                    es: /[áéíóúñ¡¿]|(?:el|los|las|en|con|por|para)\s/i,
+                    fr: /[éèêëàâîïôûùüç]|(?:le|les|des|en|avec|pour)\s/i,
+                    it: /[àèéìíîòóùú]|(?:il|la|gli|le|con|per)\s/i,
+                    zh: /[\u4e00-\u9fff]/,
+                    ja: /[\u3040-\u30ff\u4e00-\u9fff]/,
+                    ko: /[\uac00-\ud7af]/,
+                    ru: /[а-яё]/,
+                    vi: /[àáâãèéêìíòóôõùúưỳýđĐ]/,
+                    de: /[äöüß]/,
+                    pt: /[áéíóúãõç]/,
+                    nl: /[áéíóúãõç]/,
+                    pl: /[ąćęłńóśźż]/,
+                    tr: /[ğıİş]/,
+                    ar: /[أبتثجحخدذرزسشصضطظعغفقكلمنهويةى]/,
+                    hi: /[अआइईउऊऋऌऍऎएऐऑऒओऔकखगघङचछजझञटठडढणतथदधनऩपफबभमयरऱलळऴवशषसहऺऻ़ऽािीुूृॄॅॆेैॉॊोौ्ॎॏॐ॒॑॓॔ॕॖॗक़ख़ग़ज़ड़ढ़फ़य़]/,
+                    he: /[אבגדהוזחטיכלמנסעפצקרשתךםןףץ]/,
+                    th: /[ก-๙]/,
+                    el: /[α-ωΑ-Ωάέήίόύώϊϋΐΰ]/,
+                    ur: /[آأءئابتثجحخدذرزسشصضطظعغفقكلمنهوية]/,
+                    cs: /[áčďéěíňóřšťúůýž]/,
+                    hu: /[áéíóöőúüű]/,
+                    fi: /[äö]/,
+                    sv: /[åäö]/,
+                };
+
+
+                function detectLanguage(title) {
+                    // Check for obvious markers first
+                    // if (title.includes('Let\'s') || title.includes('&#39;s')) return 'en';
+                    // if (title.includes('¡') || title.includes('¿')) return 'es';
+                    // if (title.includes('Лучшие') || title.includes('видео')) return 'ru';
+
+                    // Then check patterns
+                    for (const [lang, pattern] of Object.entries(languagePatterns)) {
+                        if (pattern.test(title)) return lang;
                     }
+
+                    // Default to English if no specific patterns match
+                    return 'en';
                 }
 
-                // Remove text filter
-                if (removeText && video.title.toLowerCase().includes(removeText)) {
-                    return false;
+                // Set up all event listeners once at initialization
+                document.getElementById('searchBtn').addEventListener('click', searchChannel);
+                document.getElementById('channelName').addEventListener('keypress', e => e.key === 'Enter' && searchChannel());
+                document.getElementById('exportAll').addEventListener('click', () => {
+                    if (state.channelId && state.channelName) {
+                        const sanitizedName = sanitizeFilename(state.channelName);
+                        exportToCsv(state.videos, `youtube_videos_${state.channelId}_${sanitizedName}.csv`);
+                    } else {
+                        exportToCsv(state.videos, 'youtube_videos.csv');
+                    }
+                });
+                document.getElementById('exportUrls').addEventListener('click', () => exportToCsv(state.videos.map(video => ({ url: video.url })), 'video_urls.csv'));
+                document.getElementById('exportScript').addEventListener('click', exportYtDlpScript);
+                document.getElementById('importCsv').addEventListener('change', handleCsvImport);
+
+                // Set up filter listeners once
+                ['languageFilter', 'limitRows', 'includeText', 'removeText', 'minLength', 'maxLength'].forEach(id => {
+                    document.getElementById(id).addEventListener('input', applyFilters);
+                });
+                document.getElementById('removeBtn').addEventListener('click', applyFilters);
+                document.querySelectorAll('th[data-sort]').forEach(th => {
+                    th.addEventListener('click', () => {
+                        const column = th.dataset.sort;
+                        if (state.sortColumn === column) {
+                            state.sortDirection = state.sortDirection === 'desc' ? 'asc' : 'desc';
+                        } else {
+                            state.sortColumn = column;
+                            state.sortDirection = 'desc';
+                        }
+                        
+                        // Update arrows
+                        document.querySelectorAll('th[data-sort]').forEach(header => {
+                            const arrow = header.querySelector('.sort-arrow');
+                            if (header.dataset.sort === state.sortColumn) {
+                                arrow.textContent = state.sortDirection === 'desc' ? '↓' : '↑';
+                                header.classList.add('active');
+                            } else {
+                                arrow.textContent = '';
+                                header.classList.remove('active');
+                            }
+                        });
+                        
+                        applyFilters();
+                    });
+                });
+
+                function applyFilters() {
+                    const languageFilter = document.getElementById('languageFilter').value;
+                    const limitRows = parseInt(document.getElementById('limitRows').value) || 0;
+                    const includeText = document.getElementById('includeText').value
+                        .toLowerCase()
+                        .split(',')
+                        .map(text => text.trim())
+                        .filter(text => text.length > 0);
+                    const removeText = document.getElementById('removeText').value
+                        .toLowerCase()
+                        .split(',')
+                        .map(text => text.trim())
+                        .filter(text => text.length > 0);
+                    const minLength = document.getElementById('minLength').value;
+                    const maxLength = document.getElementById('maxLength').value;
+
+                    // First find videos matching includeText - these override other filters
+                    const pinnedVideos = includeText.length > 0
+                        ? state.videos.filter(video =>
+                            includeText.some(text => video.title.toLowerCase().includes(text)))
+                        : [];
+
+                    // Apply filters to remaining videos
+                    let remainingVideos = state.videos.filter(video => !pinnedVideos.includes(video));
+
+                    if (removeText.length > 0) {
+                        remainingVideos = remainingVideos.filter(video =>
+                            !removeText.some(text => video.title.toLowerCase().includes(text)));
+                    }
+
+                    if (languageFilter) {
+                        remainingVideos = remainingVideos.filter(video =>
+                            detectLanguage(video.title) === languageFilter);
+                    }
+
+                    // Apply duration filters to remaining videos
+                    if (minLength) {
+                        const minSeconds = parseDuration(minLength);
+                        remainingVideos = remainingVideos.filter(video => 
+                            parseDuration(video.duration) >= minSeconds
+                        );
+                    }
+
+                    if (maxLength) {
+                        const maxSeconds = parseDuration(maxLength);
+                        remainingVideos = remainingVideos.filter(video => 
+                            parseDuration(video.duration) <= maxSeconds
+                        );
+                    }
+
+                    // Sort both pinned and remaining videos
+                    const getSortValue = (video) => {
+                        switch (state.sortColumn) {
+                            case 'title':
+                                return video.title.toLowerCase();
+                            case 'date':
+                                return new Date(video.uploadDate);
+                            case 'views':
+                                return parseInt(video.viewCount.replace(/,/g, ''));
+                            case 'duration':
+                                return parseDuration(video.duration);
+                            default:
+                                return 0;
+                        }
+                    };
+
+                    const sortFn = (a, b) => {
+                        const aVal = getSortValue(a);
+                        const bVal = getSortValue(b);
+                        const modifier = state.sortDirection === 'desc' ? -1 : 1;
+                        
+                        if (typeof aVal === 'string') {
+                            return aVal.localeCompare(bVal) * modifier;
+                        }
+                        return (aVal - bVal) * modifier;
+                    };
+
+                    pinnedVideos.sort(sortFn);
+                    remainingVideos.sort(sortFn);
+
+                    // Combine and apply limit
+                    state.filteredVideos = limitRows > 0
+                        ? [...pinnedVideos, ...remainingVideos].slice(0, limitRows)
+                        : [...pinnedVideos, ...remainingVideos];
+
+                    updateVideoTable();
                 }
 
-                return true;
-            });
+                function updateVideoTable() {
+                    try {
+                        if (state) window.state = state;
+                        // console.log(state);
+                    } catch (error) {
+                        console.error('Error updating video table:', error);
+                    }
 
-            updateVideoTable();
-        }
+                    const tbody = document.getElementById('videoTable');
+                    const videoSection = document.getElementById('videoSection');
 
-        function updateVideoTable() {
-            console.log('Updating video table with videos:', state.filteredVideos);
-            const tbody = document.getElementById('videoTable');
-            const videoSection = document.getElementById('videoSection');
-            
-            if (state.filteredVideos.length === 0) {
-                console.log('No videos to display');
-                tbody.innerHTML = '<tr><td colspan="4" class="p-3 text-center">No videos match the current filters</td></tr>';
-                return;
-            }
+                    // Always show video section first
+                    videoSection.style.display = 'block';
 
-            videoSection.style.display = 'block';
-            tbody.innerHTML = state.filteredVideos.map(video => `
-                <tr class="border-t border-gray-700 hover:bg-gray-700">
-                    <td class="p-3">${video.title}</td>
-                    <td class="p-3">${video.uploadDate}</td>
-                    <td class="p-3">${video.viewCount}</td>
-                    <td class="p-3">
-                        <a href="${video.url}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:text-blue-300">
-                            ${video.url}
-                        </a>
-                    </td>
-                </tr>
-            `).join('');
-        }
+                    if (!tbody) {
+                        console.error('Could not find video table body');
+                        return;
+                    }
 
-        function exportYtDlpScript() {
-            const urls = state.filteredVideos.map(video => video.url);
-            const script = `#!/bin/bash
+                    if (state.filteredVideos.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="4" class="p-3 text-center">No videos found</td></tr>';
+                        return;
+                    }
+
+                    tbody.innerHTML = state.filteredVideos.map(video => `
+                        <tr class="border-t border-gray-700 hover:bg-gray-700">
+                            <td class="p-3">${video.title}</td>
+                            <td class="p-3">${video.uploadDate}</td>
+                            <td class="p-3">${video.viewCount}</td>
+                            <td class="p-3">${formatDuration(parseDuration(video.duration))}</td>
+                            <td class="p-3">
+                                <a href="${video.url}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:text-blue-300">
+                                    ${video.url}
+                                </a>
+                            </td>
+                        </tr>
+                    `).join('');
+
+                    console.log(`Updated table with ${state.filteredVideos.length} videos`);
+                }
+
+                function exportYtDlpScript() {
+                    const maxResolution = document.getElementById('maxResolution').value;
+                    const includeSubtitles = document.getElementById('includeSubtitles').checked;
+                    const includeChannelName = document.getElementById('includeChannelName').checked;
+
+                    let ytDlpOptions = [];
+
+                    // Add resolution option
+                    if (maxResolution !== 'best') {
+                        ytDlpOptions.push(`-f "bestvideo[height<=${maxResolution}]+bestaudio/best[height<=${maxResolution}]"`);
+                    }
+
+                    // Add subtitle option
+                    if (includeSubtitles) {
+                        ytDlpOptions.push('--write-auto-sub --sub-lang en');
+                    }
+
+                    // Sanitize function for filenames - matches shell behavior
+
+
+                    const sanitizedChannelName = state.channelName ? sanitizeFilename(state.channelName) : '';
+
+                    // Add output template with sanitized filename
+                    const outputTemplate = includeChannelName
+                        ? `-o "yt-downloads/%(channel)s/%(title)s.%(ext)s"`
+                        : `-o "yt-downloads/%(title)s.%(ext)s"`;
+                    ytDlpOptions.push(outputTemplate);
+
+                    const script = `#!/bin/bash
 # YouTube Download Script
 # Generated ${new Date().toLocaleString()}
+${state.channelName ? `# Channel: ${state.channelName}` : ''}
 
 # Make sure yt-dlp is installed
 command -v yt-dlp >/dev/null 2>&1 || { echo "yt-dlp is required but not installed. Aborting." >&2; exit 1; }
 
+# Create download directory
+mkdir -p "yt-downloads"
+cd "yt-downloads"
+
+# Function to check if video already exists
+video_exists() {
+    local title="$1"
+    local channel="$2"
+    # Check in root directory
+    if ls "$title"* >/dev/null 2>&1; then
+        return 0
+    fi
+    # Check in channel directory if it exists
+    if [ -n "$channel" ] && [ -d "$channel" ] && ls "$channel/$title"* >/dev/null 2>&1; then
+        return 0
+    fi
+    return 1
+}
+
 # Download videos
-${urls.map(url => `yt-dlp "${url}"`).join('\n')}
+${state.filteredVideos.map(video => {
+                        const sanitizedTitle = sanitizeFilename(video.title);
+                        const url = video.url.replace(/"/g, '\\"');  // Escape quotes
+                        return `
+# ${video.title.replace(/"/g, '\\"')}
+if video_exists "${sanitizedTitle}" "${sanitizedChannelName}"; then
+    echo "Skipping (already exists): ${video.title.replace(/"/g, '\\"')}"
+else
+    echo "Downloading: ${video.title.replace(/"/g, '\\"')}"
+    yt-dlp ${ytDlpOptions.join(' ')} "${url}"
+fi`;
+                    }).join('\n\n')}
 
 echo "Download complete!"`;
 
-            const blob = new Blob([script], { type: 'text/plain' });
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'download_videos.sh';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            window.URL.revokeObjectURL(url);
-        }
-
-        function showLoading(show) {
-            const loadingEl = document.getElementById('loading');
-            if (show) {
-                loadingEl.classList.remove('hidden');
-            } else {
-                loadingEl.classList.add('hidden');
-            }
-            state.loading = show;
-        }
-
-        function showError(message) {
-            alert(message);
-        }
-
-        async function searchChannel() {
-            const channelName = document.getElementById('channelName').value;
-            const apiKey = document.getElementById('apiKey').value;
-            const searchResults = document.getElementById('searchResults');
-
-            if (!channelName || !apiKey) {
-                showError('Please enter both channel name and API key');
-                return;
-            }
-
-            showLoading(true);
-            searchResults.innerHTML = '';
-            
-            try {
-                console.log('Searching for channel:', channelName);
-                const response = await fetch(
-                    `https://www.googleapis.com/youtube/v3/search?part=snippet&type=channel&q=${encodeURIComponent(channelName)}&key=${apiKey}`
-                );
-
-                if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.error?.message || 'API request failed');
+                    const blob = new Blob([script], { type: 'text/plain' });
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'download_videos.sh';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
                 }
 
-                const data = await response.json();
-                console.log('Search results:', data);
-
-                if (!data.items?.length) {
-                    showError('No channels found');
-                    return;
+                function showLoading(show) {
+                    const loadingEl = document.getElementById('loading');
+                    if (show) {
+                        loadingEl.classList.remove('hidden');
+                    } else {
+                        loadingEl.classList.add('hidden');
+                    }
+                    state.loading = show;
                 }
 
-                // Clear existing results and show dropdown
-                searchResults.innerHTML = '';
-                searchResults.style.display = 'block';
-                searchResults.style.position = 'absolute';
-                searchResults.style.width = '100%';
-                searchResults.style.zIndex = '1000';
-                searchResults.style.backgroundColor = '#374151';
-                searchResults.style.border = '1px solid #4B5563';
-                searchResults.style.borderRadius = '0.375rem';
-                searchResults.style.marginTop = '0.25rem';
-                searchResults.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)';
+                function showError(message) {
+                    alert(message);
+                }
 
-                data.items.forEach(channel => {
-                    const div = document.createElement('div');
-                    div.className = 'p-3 hover:bg-gray-600 cursor-pointer border-b border-gray-600 last:border-b-0';
-                    div.textContent = channel.snippet.title;
-                    div.onclick = () => {
-                        fetchVideos(channel.id.channelId);
-                        searchResults.style.display = 'none';
+                async function searchChannel() {
+                    const channelName = document.getElementById('channelName').value;
+                    const apiKey = document.getElementById('apiKey').value;
+                    const searchResults = document.getElementById('searchResults');
+                    const videoSection = document.getElementById('videoSection');
+
+                    if (!channelName || !apiKey) {
+                        showError('Please enter both channel name and API key');
+                        return;
+                    }
+
+                    showLoading(true);
+                    searchResults.innerHTML = '';
+                    searchResults.style.display = 'none';
+
+                    try {
+                        console.log('Searching for channel:', channelName);
+                        const response = await fetch(
+                            `https://www.googleapis.com/youtube/v3/search?part=snippet&type=channel&q=${encodeURIComponent(channelName)}&key=${apiKey}`
+                        );
+
+                        if (!response.ok) {
+                            const error = await response.json();
+                            throw new Error(error.error?.message || 'API request failed');
+                        }
+
+                        const data = await response.json();
+                        console.log('Search results:', data);
+
+                        if (!data.items?.length) {
+                            showError('No channels found');
+                            return;
+                        }
+
+                        // Clear existing results and show dropdown
+                        searchResults.innerHTML = '';
+                        videoSection.style.display = 'none';
+                        searchResults.style.display = 'block';
+                        searchResults.style.position = 'absolute';
+                        searchResults.style.width = '100%';
+                        searchResults.style.zIndex = '1000';
+                        searchResults.style.backgroundColor = '#374151';
+                        searchResults.style.border = '1px solid #4B5563';
+                        searchResults.style.borderRadius = '0.375rem';
+                        searchResults.style.marginTop = '0.25rem';
+                        searchResults.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)';
+
+                        data.items.forEach(channel => {
+                            const div = document.createElement('div');
+                            div.className = 'p-3 hover:bg-gray-600 cursor-pointer border-b border-gray-600 last:border-b-0';
+                            div.textContent = channel.snippet.title;
+                            div.onclick = () => {
+                                state.videos = [];
+                                state.filteredVideos = [];
+                                updateVideoTable();
+                                fetchVideos(channel.id.channelId, channel.snippet.title);
+                                searchResults.style.display = 'none';
+                            };
+                            searchResults.appendChild(div);
+                            console.log('Added channel to dropdown:', channel.snippet.title);
+                        });
+                    } catch (error) {
+                        showError(`Error: ${error.message}`);
+                    } finally {
+                        showLoading(false);
+                    }
+                }
+
+                async function fetchVideos(channelId, channelName) {
+                    state.channelId = channelId;
+                    state.channelName = channelName;
+                    const apiKey = document.getElementById('apiKey').value;
+                    document.getElementById('searchResults').classList.add('hidden');
+                    showLoading(true);
+                    state.videos = [];
+                    state.filteredVideos = [];
+
+                    try {
+                        // First try API
+                        await fetchWithApi(channelId, apiKey);
+                    } catch (error) {
+                        console.error('API fetch failed:', error);
+                        // If API fails, try yt-dlp
+                        try {
+                            await fetchWithYtDlp(channelId);
+                        } catch (ytError) {
+                            showError(`Both API and yt-dlp failed: ${error.message} / ${ytError.message}`);
+                        }
+                    } finally {
+                        showLoading(false);
+                    }
+                }
+
+                async function fetchWithApi(channelId, apiKey) {
+                    let nextPageToken = '';
+
+                    do {
+                        const response = await fetch(
+                            `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${channelId}&maxResults=50&order=date&type=video&key=${apiKey}${nextPageToken ? `&pageToken=${nextPageToken}` : ''}`
+                        );
+
+                        if (!response.ok) {
+                            const error = await response.json();
+                            throw new Error(error.error?.message || 'Failed to fetch videos');
+                        }
+
+                        const data = await response.json();
+
+                        // Fetch view counts
+                        const videoIds = data.items.map(item => item.id.videoId).join(',');
+                        const statsResponse = await fetch(
+                            `https://www.googleapis.com/youtube/v3/videos?part=statistics,contentDetails&id=${videoIds}&key=${apiKey}`
+                        );
+
+                        if (!statsResponse.ok) {
+                            throw new Error('Failed to fetch video statistics');
+                        }
+
+                        const statsData = await statsResponse.json();
+
+                        const videosWithStats = data.items.map(item => {
+                            const stats = statsData.items.find(stat => stat.id === item.id.videoId);
+                            return {
+                                title: item.snippet.title,
+                                url: `https://www.youtube.com/watch?v=${item.id.videoId}`,
+                                uploadDate: new Date(item.snippet.publishedAt).toLocaleDateString(),
+                                viewCount: parseInt(stats?.statistics.viewCount || 0).toLocaleString(),
+                                duration: stats?.contentDetails?.duration || '00:00:00'
+                            };
+                        });
+
+                        state.videos.push(...videosWithStats);
+                        state.filteredVideos = [...state.videos]; // Update filtered videos
+                        nextPageToken = data.nextPageToken;
+
+                        // Update table after each page of results
+                        updateVideoTable();
+                    } while (nextPageToken);
+
+                    document.getElementById('videoSection').style.display = 'block';
+                }
+
+                async function initPyodide() {
+                    let pyodide = await loadPyodide();
+                    await pyodide.loadPackage("micropip");
+                    const micropip = pyodide.pyimport("micropip");
+                    
+                    // Install required packages
+                    await micropip.install([
+                        'yt-dlp',
+                        'requests'
+                    ]);
+
+                    return pyodide;
+                }
+
+                async function fetchWithYtDlp(channelId) {
+                    try {
+                        const pyodide = await initPyodide();
+                        
+                        // Python code to fetch channel info
+                        const pythonCode = `
+import yt_dlp
+import json
+
+def get_channel_videos(channel_id):
+    ydl_opts = {
+        'quiet': True,
+        'extract_flat': True,
+        'force_generic_extractor': True
+    }
+    
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        url = f"https://www.youtube.com/channel/{channel_id}"
+        info = ydl.extract_info(url, download=False)
+        entries = info.get('entries', [])
+        
+        videos = []
+        for entry in entries:
+            videos.append({
+                'title': entry.get('title', ''),
+                'url': f"https://www.youtube.com/watch?v={entry['id']}",
+                'duration': entry.get('duration', 0),
+                'viewCount': entry.get('view_count', 0),
+                'uploadDate': entry.get('upload_date', '')
+            })
+        
+        return json.dumps(videos)
+`;
+
+                        // Run Python code
+                        pyodide.runPython(pythonCode);
+                        const result = pyodide.runPython(`get_channel_videos("${channelId}")`);
+                        const videos = JSON.parse(result);
+
+                        // Update state with results
+                        state.videos = videos.map(video => ({
+                            title: video.title,
+                            url: video.url,
+                            duration: formatDuration(video.duration),
+                            viewCount: video.viewCount.toLocaleString(),
+                            uploadDate: formatYtDlpDate(video.uploadDate)
+                        }));
+
+                        state.filteredVideos = [...state.videos];
+                        updateVideoTable();
+
+                    } catch (error) {
+                        throw new Error(`WASM yt-dlp failed: ${error.message}`);
+                    }
+                }
+
+                function formatYtDlpDate(dateStr) {
+                    // Convert YYYYMMDD to locale date string
+                    const year = dateStr.substring(0, 4);
+                    const month = dateStr.substring(4, 6);
+                    const day = dateStr.substring(6, 8);
+                    return new Date(year, month - 1, day).toLocaleDateString();
+                }
+
+                function exportToCsv(data, filename) {
+                    const csv = [
+                        Object.keys(data[0]).join(','),
+                        ...data.map(row => Object.values(row).map(value => `"${value}"`).join(','))
+                    ].join('\n');
+
+                    const blob = new Blob([csv], { type: 'text/csv' });
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                }
+
+                function handleCsvImport(e) {
+                    const file = e.target.files[0];
+                    if (!file) return;
+
+                    const reader = new FileReader();
+                    reader.onload = function (event) {
+                        try {
+                            // Split the CSV into lines and remove empty lines
+                            const lines = event.target.result.split('\n')
+                                .map(line => line.trim())
+                                .filter(line => line);
+
+                            // Get headers from first line
+                            const headers = lines[0].split(',').map(h => h.trim());
+
+                            // Validate required columns
+                            const requiredColumns = ['title', 'url', 'uploadDate', 'viewCount'];
+                            const missingColumns = requiredColumns.filter(col => !headers.includes(col));
+
+                            if (missingColumns.length > 0) {
+                                throw new Error(`Missing required columns: ${missingColumns.join(', ')}`);
+                            }
+
+                            // Parse the data rows
+                            state.videos = lines.slice(1).map(line => {
+                                // Split by comma, but respect quotes
+                                const values = line.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g)
+                                    .map(val => val.replace(/^"|"$/g, '').trim());
+
+                                return {
+                                    title: values[headers.indexOf('title')],
+                                    url: values[headers.indexOf('url')],
+                                    uploadDate: values[headers.indexOf('uploadDate')],
+                                    viewCount: values[headers.indexOf('viewCount')],
+                                    duration: values[headers.indexOf('duration')]
+                                };
+                            });
+
+                            // Update the filtered videos
+                            state.filteredVideos = [...state.videos];
+
+                            // Show video section
+                            const videoSection = document.getElementById('videoSection');
+                            videoSection.style.display = 'block';
+
+                            // Setup filter listeners before applying filters
+                            applyFilters();
+
+                            // Just update the table with the new data
+                            updateVideoTable();
+
+                            // Reset the file input
+                            e.target.value = '';
+
+                        } catch (error) {
+                            showError(`Error importing CSV: ${error.message}`);
+                            console.error('Import error:', error);
+                        }
                     };
-                    searchResults.appendChild(div);
-                    console.log('Added channel to dropdown:', channel.snippet.title);
+
+                    reader.onerror = function () {
+                        showError('Error reading the file');
+                    };
+
+                    reader.readAsText(file);
+                }
+
+                // Add this function after the state declaration
+                async function loadCsvFromUrl(url) {
+                    showLoading(true);
+                    try {
+                        const response = await fetch(url);
+                        if (!response.ok) {
+                            throw new Error('Failed to fetch CSV');
+                        }
+                        const csvText = await response.text();
+
+                        // Split the CSV into lines and remove empty lines
+                        const lines = csvText.split('\n')
+                            .map(line => line.trim())
+                            .filter(line => line);
+
+                        // Get headers from first line
+                        const headers = lines[0].split(',').map(h => h.trim());
+
+                        // Validate required columns
+                        const requiredColumns = ['title', 'url', 'uploadDate', 'viewCount'];
+                        const missingColumns = requiredColumns.filter(col => !headers.includes(col));
+
+                        if (missingColumns.length > 0) {
+                            throw new Error(`Missing required columns: ${missingColumns.join(', ')}`);
+                        }
+
+                        // Parse the data rows
+                        state.videos = lines.slice(1).map(line => {
+                            // Split by comma, but respect quotes
+                            const values = line.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g)
+                                .map(val => val.replace(/^"|"$/g, '').trim());
+
+                            return {
+                                title: values[headers.indexOf('title')],
+                                url: values[headers.indexOf('url')],
+                                uploadDate: values[headers.indexOf('uploadDate')],
+                                viewCount: values[headers.indexOf('viewCount')],
+                                duration: values[headers.indexOf('duration')]
+                            };
+                        });
+
+                        // Update the filtered videos
+                        state.filteredVideos = [...state.videos];
+
+                        // Show video section and update table
+                        const videoSection = document.getElementById('videoSection');
+                        videoSection.style.display = 'block';
+                        updateVideoTable();
+
+                    } catch (error) {
+                        showError(`Error loading CSV: ${error.message}`);
+                        console.error('Load error:', error);
+                    } finally {
+                        showLoading(false);
+                    }
+                }
+
+                // Check for data URL in query params
+                const urlParams = new URLSearchParams(window.location.search);
+                const dataUrl = urlParams.get('d');
+                if (dataUrl) {
+                    if (dataUrl.startsWith('http')) {
+                        loadCsvFromUrl(dataUrl);
+                    } else {
+                        loadCsvFromUrl(`https://s3.us-east-2.amazonaws.com/tribixbite/sx/${dataUrl}.csv`);
+                    }
+                }
+
+                document.getElementById('fab-button').addEventListener('click', () => {
+                    const content = document.getElementById('fab-content');
+                    content.classList.toggle('hidden');
                 });
-            } catch (error) {
-                showError(`Error: ${error.message}`);
-            } finally {
-                showLoading(false);
-            }
-        }
 
-        async function fetchVideos(channelId) {
-            const apiKey = document.getElementById('apiKey').value;
-            document.getElementById('searchResults').classList.add('hidden');
-            showLoading(true);
-            state.videos = [];
-            
-            try {
-                let nextPageToken = '';
-                
-                do {
-                    const response = await fetch(
-                        `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${channelId}&maxResults=50&order=date&type=video&key=${apiKey}${nextPageToken ? `&pageToken=${nextPageToken}` : ''}`
-                    );
-
-                    if (!response.ok) {
-                        const error = await response.json();
-                        throw new Error(error.error?.message || 'Failed to fetch videos');
+                // Close menu when clicking outside
+                document.addEventListener('click', (e) => {
+                    const fabMenu = document.getElementById('fab-menu');
+                    const content = document.getElementById('fab-content');
+                    if (!fabMenu.contains(e.target)) {
+                        content.classList.add('hidden');
                     }
+                });
 
-                    const data = await response.json();
+                function parseDuration(duration) {
+                    if (!duration) return 0;
+                    if (typeof duration === 'number') return duration;
                     
-                    // Fetch view counts
-                    const videoIds = data.items.map(item => item.id.videoId).join(',');
-                    const statsResponse = await fetch(
-                        `https://www.googleapis.com/youtube/v3/videos?part=statistics&id=${videoIds}&key=${apiKey}`
-                    );
-
-                    if (!statsResponse.ok) {
-                        throw new Error('Failed to fetch video statistics');
+                    // Handle ISO 8601 duration from YouTube API
+                    if (duration.includes('PT')) {
+                        const matches = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+                        if (!matches) return 0;
+                        const [_, hours, minutes, seconds] = matches;
+                        return (parseInt(hours || 0) * 3600) + 
+                               (parseInt(minutes || 0) * 60) + 
+                               parseInt(seconds || 0);
                     }
-
-                    const statsData = await statsResponse.json();
                     
-                    const videosWithStats = data.items.map(item => {
-                        const stats = statsData.items.find(stat => stat.id === item.id.videoId);
-                        return {
-                            title: item.snippet.title,
-                            url: `https://www.youtube.com/watch?v=${item.id.videoId}`,
-                            uploadDate: new Date(item.snippet.publishedAt).toLocaleDateString(),
-                            viewCount: parseInt(stats?.statistics.viewCount || 0).toLocaleString()
-                        };
-                    });
-                    
-                    state.videos.push(...videosWithStats);
-                    nextPageToken = data.nextPageToken;
-                    
-                    updateVideoTable();
-                } while (nextPageToken);
+                    // Handle HH:MM:SS format
+                    const parts = duration.split(':').map(part => parseInt(part) || 0);
+                    if (parts.length === 3) {
+                        return (parts[0] * 3600) + (parts[1] * 60) + parts[2];
+                    }
+                    if (parts.length === 2) {
+                        return (parts[0] * 60) + parts[1];
+                    }
+                    return parseInt(parts[0] || 0);
+                }
 
-                document.getElementById('videoSection').style.display = 'block';
-            } catch (error) {
-                showError(`Error: ${error.message}`);
-            } finally {
-                showLoading(false);
-            }
-        }
-
-        function updateVideoTable() {
-            const tbody = document.getElementById('videoTable');
-            tbody.innerHTML = state.videos.map(video => `
-                <tr class="border-t border-gray-700 hover:bg-gray-700">
-                    <td class="p-3">${video.title}</td>
-                    <td class="p-3">${video.uploadDate}</td>
-                    <td class="p-3">${video.viewCount}</td>
-                    <td class="p-3">
-                        <a href="${video.url}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:text-blue-300">
-                            ${video.url}
-                        </a>
-                    </td>
-                </tr>
-            `).join('');
-        }
-
-        function exportToCsv(data, filename) {
-            const csv = [
-                Object.keys(data[0]).join(','),
-                ...data.map(row => Object.values(row).map(value => `"${value}"`).join(','))
-            ].join('\n');
-
-            const blob = new Blob([csv], { type: 'text/csv' });
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = filename;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            window.URL.revokeObjectURL(url);
-        }
-
-        // Event Listeners
-        document.getElementById('searchBtn').addEventListener('click', searchChannel);
-        document.getElementById('exportAll').addEventListener('click', () => 
-            exportToCsv(state.videos, 'youtube_videos.csv')
-        );
-        document.getElementById('exportUrls').addEventListener('click', () => 
-            exportToCsv(state.videos.map(video => ({ url: video.url })), 'video_urls.csv')
-        );
-
-        // Enter key handler for search
-        document.getElementById('channelName').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                searchChannel();
-            }
-        });
-    </script>
+                function formatDuration(seconds) {
+                    if (!seconds) return '00:00:00';
+                    const h = Math.floor(seconds / 3600);
+                    const m = Math.floor((seconds % 3600) / 60);
+                    const s = seconds % 60;
+                    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+                }
+            });
+        </script>
 </body>
+
 </html>
