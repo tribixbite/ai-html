@@ -495,47 +495,50 @@
                     const maxResolution = document.getElementById('maxResolution').value;
                     const includeSubtitles = document.getElementById('includeSubtitles').checked;
                     const includeChannelName = document.getElementById('includeChannelName').checked;
-
+                    
                     let ytDlpOptions = [
                         '-ciw',
                         '--download-archive "yt-downloads/archive.txt"',
+                        '--sleep-requests 1',
                         '--sleep-interval 2',
-                        '--max-sleep-interval 5',
-                        '--retries 10',
+                        '--max-sleep-interval 10',
+                        '--retries 15',
                         '--fragment-retries 10',
                         '--concurrent-fragments 3',
                         '--no-abort-on-unavailable-fragment',
-                        '--abort-on-error',
-                        '--no-playlist'
+                        '--no-playlist',
+                        '--geo-bypass',
+                        '--ignore-errors'
                     ];
-
+                    
                     // Add resolution option
                     if (maxResolution !== 'best') {
                         ytDlpOptions.push(`-f "bestvideo[height<=${maxResolution}]+bestaudio/best[height<=${maxResolution}]"`);
                     }
-
-                    // Add subtitle option (ENGLISH ONLY)
+                    
+                    // Add subtitle options - English only with priorities
                     if (includeSubtitles) {
                         ytDlpOptions.push('--write-auto-sub');
                         ytDlpOptions.push('--write-sub');
-                        ytDlpOptions.push('--sub-lang en');
+                        ytDlpOptions.push('--sub-lang "en,en-US,en-GB"'); // Priority order
                         ytDlpOptions.push('--convert-subs srt');
                     }
-
+                    
                     const sanitizedChannelName = state.channelName ? sanitizeFilename(state.channelName) : '';
-
+                    
                     // Add output template
                     const outputTemplate = includeChannelName
                         ? `-o "yt-downloads/%(channel)s/%(title)s.%(ext)s"`
                         : `-o "yt-downloads/%(title)s.%(ext)s"`;
+                    
                     ytDlpOptions.push(outputTemplate);
-
+                    
                     const script = `#!/bin/bash
                 # YouTube Download Script
                 # Generated ${new Date().toLocaleString()}
                 ${state.channelName ? `# Channel: ${state.channelName}` : ''}
 
-                set -euo pipefail
+                set -o pipefail
 
                 # Make sure yt-dlp is installed
                 command -v yt-dlp >/dev/null 2>&1 || { echo "yt-dlp is required but not installed. Aborting." >&2; exit 1; }
@@ -547,17 +550,56 @@
                 # Create archive file if it doesn't exist
                 touch "yt-downloads/archive.txt"
 
+                # Function to handle rate limiting and temporary failures
+                download_with_retry() {
+                    local url="$1"
+                    local title="$2"
+                    local max_attempts=3
+                    local attempt=1
+                    local wait_time=30
+                    
+                    while [ $attempt -le $max_attempts ]; do
+                        echo "Attempt $attempt of $max_attempts: $title"
+                        
+                        if yt-dlp ${ytDlpOptions.join(' ')} "$url"; then
+                            echo "Success: $title"
+                            return 0
+                        else
+                            local error_code=$?
+                            echo "Attempt $attempt failed with error code: $error_code"
+                            
+                            # Check if failure might be due to rate limiting
+                            if [ $error_code -eq 429 ] || [ $error_code -eq 403 ]; then
+                                local wait_time_with_jitter=$((wait_time + RANDOM % 30))
+                                echo "Possible rate limiting. Waiting $wait_time_with_jitter seconds before retry..."
+                                sleep $wait_time_with_jitter
+                                wait_time=$((wait_time * 2)) # Exponential backoff
+                            else
+                                # For other errors, wait a shorter time
+                                echo "Waiting 10 seconds before retry..."
+                                sleep 10
+                            fi
+                            
+                            attempt=$((attempt + 1))
+                        fi
+                    done
+                    
+                    echo "Failed after $max_attempts attempts: $title" >> "yt-downloads/errors.log"
+                    return 1
+                }
+
                 # Start downloading videos
                 echo "Starting download of ${state.filteredVideos.length} videos..."
 
                 ${state.filteredVideos.map(video => {
-                    const escapedTitle = video.title.replace(/["\\]/g, '\\$&');
-                    const escapedUrl = video.url.replace(/["\\]/g, '\\$&');
-                    return `echo "Processing: ${escapedTitle}"
-                yt-dlp ${ytDlpOptions.join(' ')} "${escapedUrl}" || echo "Failed: ${escapedTitle}" >> yt-downloads/errors.log`;
+                    const escapedTitle = video.title.replace(/["\\$`]/g, '\\$&');
+                    const escapedUrl = video.url.replace(/["\\$`]/g, '\\$&');
+                    return `echo "\\nProcessing: ${escapedTitle}"
+                download_with_retry "${escapedUrl}" "${escapedTitle}"`;
                 }).join('\n\n')}
 
-                echo "Download complete!"
+                echo "\\nDownload complete!"
+                echo "Check yt-downloads/errors.log for any failures."
                 `;
 
                     const blob = new Blob([script], { type: 'text/plain' });
@@ -570,7 +612,6 @@
                     document.body.removeChild(a);
                     window.URL.revokeObjectURL(url);
                 }
-
                 function showLoading(show) {
                     const loadingEl = document.getElementById('loading');
                     if (show) {
