@@ -496,52 +496,69 @@
                     const includeSubtitles = document.getElementById('includeSubtitles').checked;
                     const includeChannelName = document.getElementById('includeChannelName').checked;
 
-                    let ytDlpOptions = ['-ciw --download-archive "yt-downloads/archive.txt"'];
+                    let ytDlpOptions = [
+                        '-ciw',
+                        '--download-archive "yt-downloads/archive.txt"',
+                        '--sleep-interval 2',
+                        '--max-sleep-interval 5',
+                        '--retries 10',
+                        '--fragment-retries 10',
+                        '--concurrent-fragments 3',
+                        '--no-abort-on-unavailable-fragment',
+                        '--abort-on-error',
+                        '--no-playlist'
+                    ];
 
                     // Add resolution option
                     if (maxResolution !== 'best') {
                         ytDlpOptions.push(`-f "bestvideo[height<=${maxResolution}]+bestaudio/best[height<=${maxResolution}]"`);
                     }
 
-                    // Add subtitle option
+                    // Add subtitle option (ENGLISH ONLY)
                     if (includeSubtitles) {
-                        ytDlpOptions.push('--write-auto-sub --write-sub --sub-lang .*en.* --convert-subs srt');
+                        ytDlpOptions.push('--write-auto-sub');
+                        ytDlpOptions.push('--write-sub');
+                        ytDlpOptions.push('--sub-lang en');
+                        ytDlpOptions.push('--convert-subs srt');
                     }
 
                     const sanitizedChannelName = state.channelName ? sanitizeFilename(state.channelName) : '';
 
-                    // Add output template with sanitized filename
+                    // Add output template
                     const outputTemplate = includeChannelName
                         ? `-o "yt-downloads/%(channel)s/%(title)s.%(ext)s"`
                         : `-o "yt-downloads/%(title)s.%(ext)s"`;
                     ytDlpOptions.push(outputTemplate);
 
                     const script = `#!/bin/bash
-# YouTube Download Script
-# Generated ${new Date().toLocaleString()}
-${state.channelName ? `# Channel: ${state.channelName}` : ''}
+                # YouTube Download Script
+                # Generated ${new Date().toLocaleString()}
+                ${state.channelName ? `# Channel: ${state.channelName}` : ''}
 
-# Make sure yt-dlp is installed
-command -v yt-dlp >/dev/null 2>&1 || { echo "yt-dlp is required but not installed. Aborting." >&2; exit 1; }
+                set -euo pipefail
 
-# Create download directory
-mkdir -p "yt-downloads"
-${includeChannelName && sanitizedChannelName ? `mkdir -p "yt-downloads/${sanitizedChannelName}"` : ''}
+                # Make sure yt-dlp is installed
+                command -v yt-dlp >/dev/null 2>&1 || { echo "yt-dlp is required but not installed. Aborting." >&2; exit 1; }
 
-# Create archive file if it doesn't exist
-touch "yt-downloads/archive.txt"
+                # Create download directories
+                mkdir -p "yt-downloads"
+                ${includeChannelName && sanitizedChannelName ? `mkdir -p "yt-downloads/${sanitizedChannelName}"` : ''}
 
-# Download videos
-echo "Starting download of ${state.filteredVideos.length} videos..."
-${state.filteredVideos.map(video => {
-    const url = video.url.replace(/"/g, '\\"');  // Escape quotes
-    return `
-# ${video.title.replace(/"/g, '\\"')}
-echo "Processing: ${video.title.replace(/"/g, '\\"')}"
-yt-dlp ${ytDlpOptions.join(' ')} "${url}"`;
-}).join('\n\n')}
+                # Create archive file if it doesn't exist
+                touch "yt-downloads/archive.txt"
 
-echo "Download complete!"`;
+                # Start downloading videos
+                echo "Starting download of ${state.filteredVideos.length} videos..."
+
+                ${state.filteredVideos.map(video => {
+                    const escapedTitle = video.title.replace(/["\\]/g, '\\$&');
+                    const escapedUrl = video.url.replace(/["\\]/g, '\\$&');
+                    return `echo "Processing: ${escapedTitle}"
+                yt-dlp ${ytDlpOptions.join(' ')} "${escapedUrl}" || echo "Failed: ${escapedTitle}" >> yt-downloads/errors.log`;
+                }).join('\n\n')}
+
+                echo "Download complete!"
+                `;
 
                     const blob = new Blob([script], { type: 'text/plain' });
                     const url = window.URL.createObjectURL(blob);
