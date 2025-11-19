@@ -84,4 +84,14 @@ async function buildTsxFiles() {
 }
 
 // Run build
-buildTsxFiles().catch(console.error);
+buildTsxFiles()
+    .then(files => {
+        if (files.length === 0) {
+            // No TSX files is okay, not an error
+            process.exit(0);
+        }
+    })
+    .catch(error => {
+        console.error(error);
+        process.exit(1);
+    });
