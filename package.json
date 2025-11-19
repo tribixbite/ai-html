@@ -1,0 +1,19 @@
+{
+  "name": "ai-html-gallery",
+  "version": "1.0.0",
+  "description": "A gallery of standalone SPA web apps",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.js",
+    "dev": "node scripts/dev.js",
+    "generate-gallery": "node scripts/generate-gallery.js"
+  },
+  "devDependencies": {
+    "esbuild": "^0.20.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0"
+  },
+  "license": "MIT"
+}
