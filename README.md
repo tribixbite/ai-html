@@ -82,6 +82,11 @@ Then open `http://localhost:3000` to view the gallery.
 
 The gallery is automatically deployed to GitHub Pages on every push to the main branch via GitHub Actions.
 
+### Setup GitHub Actions
+
+1. Copy `GITHUB_WORKFLOW.yml` to `.github/workflows/deploy.yml` in your repository
+2. Enable GitHub Pages in repository settings (Settings → Pages → Source: GitHub Actions)
+
 The deployment process:
 1. Installs dependencies
 2. Compiles all TSX files to HTML
