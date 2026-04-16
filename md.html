@@ -952,8 +952,11 @@
         });
 
         // ── URL Resolution ──
+        // Supports: full URLs, bare filenames (foo.md), and extensionless slugs (foo)
         function resolveUrl(url) {
             if (url.startsWith('http://') || url.startsWith('https://')) return url;
+            // Auto-append .md if no extension present
+            if (!url.includes('.')) url += '.md';
             return FALLBACK_URL + url;
         }
 
@@ -1360,8 +1363,18 @@
         });
 
         // ── Init ──
+        // Priority: ?md= query param > /md/slug path > empty state
         const params = new URLSearchParams(window.location.search);
-        const mdParam = params.get('md');
+        let mdParam = params.get('md');
+
+        // Support URL slug paths like /md/pipeline-catalog or /md/foo.md
+        if (!mdParam) {
+            const path = window.location.pathname;
+            // Match /md/something or /md.html/something (trailing slug after the viewer path)
+            const slugMatch = path.match(/\/md(?:\.html)?\/(.+)$/);
+            if (slugMatch) mdParam = decodeURIComponent(slugMatch[1]);
+        }
+
         if (mdParam) {
             document.getElementById('markdown-url').value = mdParam;
             fetchAndRenderMarkdown(mdParam);
