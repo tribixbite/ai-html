@@ -1,0 +1,20 @@
+name = "tribixbite-md-og"
+main = "worker.js"
+compatibility_date = "2025-01-01"
+
+# Route the viewer path through this worker. Adjust zone_name to your zone.
+# Both the bare path and any /md/... slug paths hit the worker.
+[[routes]]
+pattern   = "tribixbite.com/md"
+zone_name = "tribixbite.com"
+
+[[routes]]
+pattern   = "tribixbite.com/md/*"
+zone_name = "tribixbite.com"
+
+[[routes]]
+pattern   = "tribixbite.com/md.html"
+zone_name = "tribixbite.com"
+
+[observability]
+enabled = true

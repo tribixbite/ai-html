@@ -398,6 +398,81 @@
             font-size: 0.875rem;
         }
 
+        /* ── File Picker ── */
+        .file-picker {
+            margin: 2.5rem auto;
+            max-width: 560px;
+            padding: 2.5rem 1.5rem;
+            border: 2px dashed var(--border-strong);
+            border-radius: calc(var(--radius) + 4px);
+            background: var(--surface);
+            text-align: center;
+            transition: border-color var(--transition), background var(--transition), transform var(--transition);
+            cursor: pointer;
+        }
+        .file-picker:hover,
+        .file-picker.drag-over {
+            border-color: var(--accent);
+            background: var(--surface-raised);
+        }
+        .file-picker.drag-over { transform: scale(1.01); }
+        .file-picker svg {
+            width: 48px;
+            height: 48px;
+            color: var(--accent);
+            margin-bottom: 0.75rem;
+            opacity: 0.85;
+        }
+        .file-picker-title {
+            font-size: 1.05rem;
+            font-weight: 600;
+            color: var(--text);
+            margin-bottom: 0.25rem;
+        }
+        .file-picker-sub {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            margin-bottom: 1rem;
+        }
+        .file-picker-hint {
+            color: var(--text-dim);
+            font-size: 0.75rem;
+            margin-top: 0.75rem;
+        }
+        .file-picker-hint code {
+            background: var(--code-bg);
+            padding: 0.1rem 0.35rem;
+            border-radius: 4px;
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+        }
+        .file-picker input[type="file"] { display: none; }
+
+        /* Global drop overlay (appears when user drags a file anywhere) */
+        .drop-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.55);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            z-index: 9999;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+        }
+        .drop-overlay.active { display: flex; }
+        .drop-overlay-inner {
+            border: 3px dashed var(--accent);
+            border-radius: 16px;
+            padding: 2.5rem 3rem;
+            color: #fff;
+            background: rgba(15, 23, 42, 0.8);
+            font-size: 1.1rem;
+            font-weight: 600;
+            text-align: center;
+        }
+
         @keyframes spin { to { transform: rotate(360deg); } }
         .spinner {
             width: 20px;
@@ -889,6 +964,11 @@
         </main>
     </div>
 
+    <!-- Global drop overlay (appears when dragging a file anywhere on the page) -->
+    <div class="drop-overlay" id="drop-overlay">
+        <div class="drop-overlay-inner">📄 Drop to open markdown file</div>
+    </div>
+
     <!-- Toast notification -->
     <div class="toast" id="toast"></div>
 
@@ -1264,7 +1344,54 @@
             }
         }
 
-        // ── Render ──
+        // ── Render core (shared by URL fetch and local file load) ──
+        async function renderMarkdownText(text, displayName) {
+            const content = document.getElementById('content');
+            rawMarkdown = text;
+
+            if (!rawMarkdown.trim()) {
+                content.innerHTML = '<div class="error">The file appears to be empty.</div>';
+                return;
+            }
+
+            const html = marked.parse(rawMarkdown);
+            const safe = DOMPurify.sanitize(html);
+            content.innerHTML = safe;
+
+            // Post-process pipeline
+            processAlerts(content);
+            wrapTables(content);
+            enhanceCodeBlocks(content);
+            processHeadings(content);
+            await processMermaid(content);
+
+            // Syntax highlight code blocks
+            Prism.highlightAllUnder(content);
+
+            // Show action buttons
+            document.getElementById('download-btn').style.display = 'inline-flex';
+            document.getElementById('raw-btn').style.display = 'inline-flex';
+            document.getElementById('footer').style.display = 'block';
+
+            // Auto-collapse URL bar
+            document.getElementById('url-bar').classList.add('collapsed');
+
+            // Update title from first h1, falling back to displayName
+            const h1 = content.querySelector('h1');
+            const titleText = h1
+                ? (h1.childNodes[0]?.textContent?.trim() || h1.textContent.replace('#', '').trim())
+                : (displayName || 'Markdown');
+            document.title = titleText + ' — MD Viewer';
+            document.querySelector('.topbar-title').innerHTML = '<span>MD</span> ' + escHtml(titleText);
+
+            // Scroll to hash if present
+            if (window.location.hash) {
+                const target = document.getElementById(window.location.hash.slice(1));
+                if (target) setTimeout(() => target.scrollIntoView({ behavior: 'smooth' }), 100);
+            }
+        }
+
+        // ── Render from URL ──
         async function fetchAndRenderMarkdown(markdownUrl) {
             const content = document.getElementById('content');
             content.innerHTML = '<div class="loading"><div class="spinner"></div>Loading...</div>';
@@ -1276,45 +1403,8 @@
                 const resolved = resolveUrl(markdownUrl);
                 currentUrl = resolved;
                 const res = await fetchWithFallback(resolved);
-                rawMarkdown = await res.text();
-
-                if (!rawMarkdown.trim()) throw new Error('The file appears to be empty.');
-
-                const html = marked.parse(rawMarkdown);
-                const safe = DOMPurify.sanitize(html);
-                content.innerHTML = safe;
-
-                // Post-process pipeline
-                processAlerts(content);
-                wrapTables(content);
-                enhanceCodeBlocks(content);
-                processHeadings(content);
-                await processMermaid(content);
-
-                // Syntax highlight code blocks
-                Prism.highlightAllUnder(content);
-
-                // Show action buttons
-                document.getElementById('download-btn').style.display = 'inline-flex';
-                document.getElementById('raw-btn').style.display = 'inline-flex';
-                document.getElementById('footer').style.display = 'block';
-
-                // Auto-collapse URL bar
-                document.getElementById('url-bar').classList.add('collapsed');
-
-                // Update title from first h1
-                const h1 = content.querySelector('h1');
-                if (h1) {
-                    const titleText = h1.childNodes[0]?.textContent?.trim() || h1.textContent.replace('#','').trim();
-                    document.title = titleText + ' — MD Viewer';
-                    document.querySelector('.topbar-title').innerHTML = '<span>MD</span> ' + escHtml(titleText);
-                }
-
-                // Scroll to hash if present
-                if (window.location.hash) {
-                    const target = document.getElementById(window.location.hash.slice(1));
-                    if (target) setTimeout(() => target.scrollIntoView({ behavior: 'smooth' }), 100);
-                }
+                const text = await res.text();
+                await renderMarkdownText(text, markdownUrl.split('/').pop().split('?')[0]);
             } catch (err) {
                 content.innerHTML = `
                     <div class="error">
@@ -1326,6 +1416,29 @@
                             <li>Check that the server allows CORS</li>
                         </ul>
                     </div>`;
+            }
+        }
+
+        // ── Render from local File object ──
+        async function renderMarkdownFile(file) {
+            if (!file) return;
+            const content = document.getElementById('content');
+            content.innerHTML = '<div class="loading"><div class="spinner"></div>Reading file...</div>';
+            document.getElementById('footer').style.display = 'none';
+            document.getElementById('raw-source').classList.remove('visible');
+            isRawView = false;
+
+            try {
+                const text = await file.text();
+                currentUrl = file.name; // used by downloadOriginal() to suggest a name
+                // Clear any ?md= so reloads don't try to fetch a stale URL
+                if (new URLSearchParams(window.location.search).has('md')) {
+                    history.replaceState(null, '', window.location.pathname);
+                }
+                await renderMarkdownText(text, file.name.replace(/\.(md|markdown|txt)$/i, ''));
+                showToast(`Loaded ${file.name}`);
+            } catch (err) {
+                content.innerHTML = `<div class="error"><strong>Error reading file:</strong> ${err.message}</div>`;
             }
         }
 
@@ -1379,12 +1492,83 @@
             document.getElementById('markdown-url').value = mdParam;
             fetchAndRenderMarkdown(mdParam);
         } else {
-            document.getElementById('content').innerHTML = `
-                <div class="warning">
-                    Enter a markdown URL above or use the <code>?md=</code> query parameter.<br>
-                    Example: <code>?md=https://example.com/readme.md</code>
-                </div>`;
+            showFilePicker();
         }
+
+        // ── File Picker UI (empty state) ──
+        function showFilePicker() {
+            const content = document.getElementById('content');
+            content.innerHTML = `
+                <div class="file-picker" id="file-picker" tabindex="0" role="button"
+                     aria-label="Open markdown file">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                         stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                        <polyline points="14 2 14 8 20 8"/>
+                        <line x1="12" y1="18" x2="12" y2="12"/>
+                        <line x1="9" y1="15" x2="15" y2="15"/>
+                    </svg>
+                    <div class="file-picker-title">Open a Markdown file</div>
+                    <div class="file-picker-sub">Drop a <code>.md</code> file here, click to browse, or paste a URL above</div>
+                    <input type="file" id="file-input" accept=".md,.markdown,.txt,text/markdown,text/plain">
+                    <div class="file-picker-hint">
+                        Tip: you can also pass <code>?md=URL</code> or use a path slug like
+                        <code>/md/readme</code>
+                    </div>
+                </div>`;
+            const picker = document.getElementById('file-picker');
+            const input = document.getElementById('file-input');
+            picker.addEventListener('click', () => input.click());
+            picker.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); }
+            });
+            input.addEventListener('change', () => {
+                if (input.files && input.files[0]) renderMarkdownFile(input.files[0]);
+            });
+            // Local drag/drop zone
+            picker.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                picker.classList.add('drag-over');
+            });
+            picker.addEventListener('dragleave', () => picker.classList.remove('drag-over'));
+            picker.addEventListener('drop', (e) => {
+                e.preventDefault();
+                picker.classList.remove('drag-over');
+                const file = e.dataTransfer?.files?.[0];
+                if (file) renderMarkdownFile(file);
+            });
+        }
+
+        // ── Global drag-and-drop (works any time, even after content loaded) ──
+        (function setupGlobalDrop() {
+            const overlay = document.getElementById('drop-overlay');
+            let dragDepth = 0;
+            const isFileDrag = (e) => e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files');
+
+            window.addEventListener('dragenter', (e) => {
+                if (!isFileDrag(e)) return;
+                e.preventDefault();
+                dragDepth++;
+                overlay.classList.add('active');
+            });
+            window.addEventListener('dragover', (e) => {
+                if (!isFileDrag(e)) return;
+                e.preventDefault();
+            });
+            window.addEventListener('dragleave', (e) => {
+                if (!isFileDrag(e)) return;
+                dragDepth = Math.max(0, dragDepth - 1);
+                if (dragDepth === 0) overlay.classList.remove('active');
+            });
+            window.addEventListener('drop', (e) => {
+                if (!isFileDrag(e)) return;
+                e.preventDefault();
+                dragDepth = 0;
+                overlay.classList.remove('active');
+                const file = e.dataTransfer?.files?.[0];
+                if (file) renderMarkdownFile(file);
+            });
+        })();
     </script>
 </body>
 </html>
