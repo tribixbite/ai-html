@@ -14,6 +14,8 @@
     <script src="https://cdn.jsdelivr.net/npm/prismjs@1/plugins/autoloader/prism-autoloader.min.js"></script>
     <!-- Mermaid diagrams -->
     <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+    <!-- aws4fetch: browser-side AWS SigV4 signing for optional S3 upload -->
+    <script src="https://cdn.jsdelivr.net/npm/aws4fetch@1.0.20/dist/aws4fetch.umd.min.js"></script>
     <style>
         /* ── Theme Variables ── */
         :root {
@@ -447,6 +449,164 @@
             font-size: 0.75rem;
         }
         .file-picker input[type="file"] { display: none; }
+
+        /* ── Settings modal ── */
+        .modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.55);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            z-index: 10000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+        .modal-backdrop.active { display: flex; }
+        .modal {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: calc(var(--radius) + 4px);
+            box-shadow: var(--shadow);
+            width: 100%;
+            max-width: 540px;
+            max-height: calc(100vh - 2rem);
+            overflow-y: auto;
+            color: var(--text);
+        }
+        .modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1rem 1.25rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .modal-title { font-size: 1rem; font-weight: 650; }
+        .modal-body { padding: 1rem 1.25rem; }
+        .modal-footer {
+            padding: 0.75rem 1.25rem;
+            border-top: 1px solid var(--border);
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+        .modal-section-title {
+            font-size: 0.8125rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin: 1rem 0 0.5rem;
+        }
+        .modal-section-title:first-child { margin-top: 0; }
+        .form-row {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+            margin-bottom: 0.75rem;
+        }
+        .form-row label {
+            font-size: 0.8125rem;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+        .form-row .hint {
+            font-size: 0.7rem;
+            color: var(--text-dim);
+        }
+        .form-row input[type="text"],
+        .form-row input[type="url"],
+        .form-row input[type="password"] {
+            background: var(--code-bg);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 0.5rem 0.625rem;
+            font: inherit;
+            font-size: 0.875rem;
+            font-family: var(--font-mono);
+            transition: border-color var(--transition);
+        }
+        .form-row input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+        .form-row-inline {
+            flex-direction: row;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .form-row-inline label {
+            font-size: 0.8125rem;
+            color: var(--text);
+            font-weight: 400;
+        }
+        .settings-warning {
+            background: var(--warning-bg);
+            border: 1px solid var(--warning-border);
+            color: var(--warning-text);
+            padding: 0.625rem 0.75rem;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            line-height: 1.5;
+            margin: 0.5rem 0 1rem;
+        }
+        .settings-status {
+            font-size: 0.8125rem;
+            padding: 0.5rem 0.625rem;
+            border-radius: 6px;
+            margin-top: 0.5rem;
+            display: none;
+        }
+        .settings-status.visible { display: block; }
+        .settings-status.ok {
+            background: var(--tip-bg);
+            border: 1px solid var(--tip-border);
+            color: var(--tip-text);
+        }
+        .settings-status.err {
+            background: var(--error-bg);
+            border: 1px solid var(--error-border);
+            color: var(--error-text);
+        }
+        .btn.btn-ghost {
+            background: transparent;
+            color: var(--text-muted);
+        }
+        .btn.btn-ghost:hover {
+            background: var(--surface-raised);
+            color: var(--text);
+        }
+        .btn.btn-danger {
+            background: var(--error-bg);
+            color: var(--error-text);
+            border-color: var(--error-border);
+        }
+        .btn.btn-danger:hover {
+            background: var(--error-border);
+            color: #fff;
+        }
+
+        /* Upload progress overlay */
+        .upload-status {
+            position: fixed;
+            bottom: 1rem;
+            right: 1rem;
+            background: var(--surface);
+            border: 1px solid var(--border-strong);
+            color: var(--text);
+            padding: 0.625rem 0.875rem;
+            border-radius: 8px;
+            font-size: 0.8125rem;
+            box-shadow: var(--shadow);
+            z-index: 9998;
+            display: none;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .upload-status.visible { display: inline-flex; }
 
         /* Global drop overlay (appears when user drags a file anywhere) */
         .drop-overlay {
@@ -898,6 +1058,22 @@
                     <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="9" y2="18"/>
                 </svg>
             </button>
+            <!-- Upload to S3 (visible only when S3 is configured) -->
+            <button class="btn btn-icon" id="upload-btn" title="Upload to your S3 bucket" style="display:none" onclick="openUploadPicker()">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="17 8 12 3 7 8"/>
+                    <line x1="12" y1="3" x2="12" y2="15"/>
+                </svg>
+            </button>
+            <input type="file" id="upload-file-input" accept=".md,.markdown,.txt,text/markdown,text/plain" style="display:none">
+            <!-- S3 settings -->
+            <button class="btn btn-icon" id="settings-btn" title="S3 settings" onclick="openSettings()">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="3"/>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                </svg>
+            </button>
             <!-- Download -->
             <button class="btn btn-icon" id="download-btn" title="Download original .md" style="display:none" onclick="downloadOriginal()">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -969,6 +1145,87 @@
         <div class="drop-overlay-inner">📄 Drop to open markdown file</div>
     </div>
 
+    <!-- Upload status pill -->
+    <div class="upload-status" id="upload-status">
+        <div class="spinner" style="width:14px;height:14px"></div>
+        <span id="upload-status-text">Uploading…</span>
+    </div>
+
+    <!-- S3 Settings modal -->
+    <div class="modal-backdrop" id="settings-modal" onclick="if(event.target===this)closeSettings()">
+        <div class="modal" role="dialog" aria-labelledby="settings-title">
+            <div class="modal-header">
+                <div class="modal-title" id="settings-title">Source &amp; S3 settings</div>
+                <button class="btn btn-icon btn-ghost" onclick="closeSettings()" aria-label="Close">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px">
+                        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="modal-section-title">Source (read)</div>
+                <div class="form-row">
+                    <label for="cfg-base-url">Base URL for bare filenames</label>
+                    <input type="url" id="cfg-base-url" placeholder="https://s3.us-east-2.amazonaws.com/tribixbite/sx/">
+                    <div class="hint">Used when <code>?md=</code> is a bare name. Must end with <code>/</code>.</div>
+                </div>
+
+                <div class="modal-section-title">Upload (write)</div>
+                <div class="settings-warning">
+                    ⚠ Credentials are stored unencrypted in your browser's <code>localStorage</code>.
+                    Only enter keys on a device you trust. Use an IAM user scoped to <em>PutObject only</em>
+                    on a single bucket/prefix — never a root key.
+                </div>
+                <div class="form-row">
+                    <label for="cfg-endpoint">Endpoint</label>
+                    <input type="url" id="cfg-endpoint" placeholder="https://s3.us-east-2.amazonaws.com">
+                    <div class="hint">For AWS S3, <code>https://s3.&lt;region&gt;.amazonaws.com</code>. For R2, Backblaze B2, MinIO, etc., use their endpoint.</div>
+                </div>
+                <div class="form-row">
+                    <label for="cfg-bucket">Bucket</label>
+                    <input type="text" id="cfg-bucket" placeholder="my-bucket">
+                </div>
+                <div class="form-row">
+                    <label for="cfg-region">Region</label>
+                    <input type="text" id="cfg-region" placeholder="us-east-1">
+                </div>
+                <div class="form-row">
+                    <label for="cfg-prefix">Path prefix (optional)</label>
+                    <input type="text" id="cfg-prefix" placeholder="sx/">
+                    <div class="hint">Folder inside the bucket. Trailing slash added automatically.</div>
+                </div>
+                <div class="form-row">
+                    <label for="cfg-access-key">Access Key ID</label>
+                    <input type="text" id="cfg-access-key" autocomplete="off" spellcheck="false">
+                </div>
+                <div class="form-row">
+                    <label for="cfg-secret-key">Secret Access Key</label>
+                    <input type="password" id="cfg-secret-key" autocomplete="off" spellcheck="false">
+                </div>
+                <div class="form-row">
+                    <label for="cfg-session-token">Session token (optional)</label>
+                    <input type="password" id="cfg-session-token" autocomplete="off" spellcheck="false">
+                    <div class="hint">Only needed for temporary STS credentials.</div>
+                </div>
+                <div class="form-row form-row-inline">
+                    <input type="checkbox" id="cfg-path-style">
+                    <label for="cfg-path-style">Use path-style URLs (for MinIO / custom endpoints)</label>
+                </div>
+                <div class="form-row form-row-inline">
+                    <input type="checkbox" id="cfg-public-read">
+                    <label for="cfg-public-read">Make uploads public-read (adds <code>x-amz-acl: public-read</code>)</label>
+                </div>
+
+                <div class="settings-status" id="settings-status"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-danger" onclick="clearS3Config()">Clear</button>
+                <button class="btn btn-ghost" onclick="testS3Config()">Test</button>
+                <button class="btn btn-primary" onclick="saveS3Config()">Save</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast notification -->
     <div class="toast" id="toast"></div>
 
@@ -986,7 +1243,14 @@
         let isRawView = false;
         let tocEntries = [];
         const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
-        const FALLBACK_URL = 'https://s3.us-east-2.amazonaws.com/tribixbite/sx/';
+        const DEFAULT_FALLBACK_URL = 'https://s3.us-east-2.amazonaws.com/tribixbite/sx/';
+        const S3_CFG_KEY = 'md-s3-config';
+
+        function getFallbackUrl() {
+            const cfg = getS3Config();
+            if (cfg && cfg.baseUrl) return cfg.baseUrl;
+            return DEFAULT_FALLBACK_URL;
+        }
 
         // ── GFM Alert icons (SVG strings) ──
         const ALERT_ICONS = {
@@ -1037,7 +1301,9 @@
             if (url.startsWith('http://') || url.startsWith('https://')) return url;
             // Auto-append .md if no extension present
             if (!url.includes('.')) url += '.md';
-            return FALLBACK_URL + url;
+            const base = getFallbackUrl();
+            // Ensure exactly one slash between base and the filename
+            return base.endsWith('/') ? base + url : base + '/' + url;
         }
 
         // ── Fetch ──
@@ -1469,6 +1735,285 @@
             fetchAndRenderMarkdown(url);
         }
 
+        // ── S3 Config (persisted in localStorage) ──
+        function getS3Config() {
+            try {
+                const raw = localStorage.getItem(S3_CFG_KEY);
+                if (!raw) return null;
+                const cfg = JSON.parse(raw);
+                if (!cfg || typeof cfg !== 'object') return null;
+                return cfg;
+            } catch { return null; }
+        }
+
+        function setS3Config(cfg) {
+            // Drop empty keys so we never store `""`
+            const clean = {};
+            for (const [k, v] of Object.entries(cfg)) {
+                if (v === undefined || v === null) continue;
+                if (typeof v === 'string') {
+                    const t = v.trim();
+                    if (t) clean[k] = t;
+                } else {
+                    clean[k] = v;
+                }
+            }
+            if (Object.keys(clean).length === 0) {
+                localStorage.removeItem(S3_CFG_KEY);
+            } else {
+                localStorage.setItem(S3_CFG_KEY, JSON.stringify(clean));
+            }
+            refreshUploadButton();
+        }
+
+        function hasUploadCreds(cfg = getS3Config()) {
+            return !!(cfg && cfg.endpoint && cfg.bucket && cfg.region && cfg.accessKeyId && cfg.secretAccessKey);
+        }
+
+        function refreshUploadButton() {
+            const btn = document.getElementById('upload-btn');
+            if (!btn) return;
+            btn.style.display = hasUploadCreds() ? 'inline-flex' : 'none';
+        }
+
+        // ── Settings modal ──
+        function openSettings() {
+            const cfg = getS3Config() || {};
+            document.getElementById('cfg-base-url').value     = cfg.baseUrl ?? '';
+            document.getElementById('cfg-endpoint').value     = cfg.endpoint ?? '';
+            document.getElementById('cfg-bucket').value       = cfg.bucket ?? '';
+            document.getElementById('cfg-region').value       = cfg.region ?? '';
+            document.getElementById('cfg-prefix').value       = cfg.prefix ?? '';
+            document.getElementById('cfg-access-key').value   = cfg.accessKeyId ?? '';
+            document.getElementById('cfg-secret-key').value   = cfg.secretAccessKey ?? '';
+            document.getElementById('cfg-session-token').value = cfg.sessionToken ?? '';
+            document.getElementById('cfg-path-style').checked = !!cfg.pathStyle;
+            document.getElementById('cfg-public-read').checked = !!cfg.publicRead;
+            hideSettingsStatus();
+            document.getElementById('settings-modal').classList.add('active');
+        }
+
+        function closeSettings() {
+            document.getElementById('settings-modal').classList.remove('active');
+        }
+
+        function readSettingsForm() {
+            let baseUrl = document.getElementById('cfg-base-url').value.trim();
+            if (baseUrl && !baseUrl.endsWith('/')) baseUrl += '/';
+            let prefix = document.getElementById('cfg-prefix').value.trim();
+            if (prefix && !prefix.endsWith('/')) prefix += '/';
+            let endpoint = document.getElementById('cfg-endpoint').value.trim().replace(/\/+$/, '');
+            return {
+                baseUrl: baseUrl || '',
+                endpoint,
+                bucket:         document.getElementById('cfg-bucket').value.trim(),
+                region:         document.getElementById('cfg-region').value.trim(),
+                prefix,
+                accessKeyId:    document.getElementById('cfg-access-key').value.trim(),
+                secretAccessKey: document.getElementById('cfg-secret-key').value.trim(),
+                sessionToken:   document.getElementById('cfg-session-token').value.trim(),
+                pathStyle:      document.getElementById('cfg-path-style').checked,
+                publicRead:     document.getElementById('cfg-public-read').checked,
+            };
+        }
+
+        function setSettingsStatus(msg, kind) {
+            const el = document.getElementById('settings-status');
+            el.className = 'settings-status visible ' + (kind === 'ok' ? 'ok' : 'err');
+            el.textContent = msg;
+        }
+        function hideSettingsStatus() {
+            document.getElementById('settings-status').className = 'settings-status';
+        }
+
+        function saveS3Config() {
+            setS3Config(readSettingsForm());
+            setSettingsStatus('Saved.', 'ok');
+            showToast('Settings saved');
+            setTimeout(closeSettings, 500);
+        }
+
+        function clearS3Config() {
+            if (!confirm('Clear all S3 settings and stored credentials?')) return;
+            localStorage.removeItem(S3_CFG_KEY);
+            ['cfg-base-url','cfg-endpoint','cfg-bucket','cfg-region','cfg-prefix',
+             'cfg-access-key','cfg-secret-key','cfg-session-token'].forEach(id => {
+                document.getElementById(id).value = '';
+            });
+            document.getElementById('cfg-path-style').checked = false;
+            document.getElementById('cfg-public-read').checked = false;
+            refreshUploadButton();
+            setSettingsStatus('Cleared.', 'ok');
+        }
+
+        async function testS3Config() {
+            const cfg = readSettingsForm();
+            if (!hasUploadCreds(cfg)) {
+                setSettingsStatus('Fill endpoint, bucket, region, and both keys to test.', 'err');
+                return;
+            }
+            setSettingsStatus('Testing…', 'ok');
+            try {
+                const client = makeAwsClient(cfg);
+                // HEAD the bucket root — 200 confirms creds + bucket access.
+                const url = buildObjectUrl(cfg, '');
+                const res = await client.fetch(url, { method: 'HEAD' });
+                if (res.ok || res.status === 403 || res.status === 404) {
+                    // 403/404 on the "directory" is fine if s3:ListBucket isn't granted —
+                    // the important signal is that the signature verified.
+                    if (res.status === 403) {
+                        setSettingsStatus('Reached endpoint. Listing denied (403) — PutObject may still work.', 'ok');
+                    } else if (res.status === 404) {
+                        setSettingsStatus('Reached endpoint (404 on root). PutObject should work.', 'ok');
+                    } else {
+                        setSettingsStatus('OK — bucket reachable.', 'ok');
+                    }
+                } else {
+                    const txt = await res.text().catch(() => '');
+                    setSettingsStatus(`Failed: HTTP ${res.status} ${txt.slice(0, 200)}`, 'err');
+                }
+            } catch (err) {
+                setSettingsStatus('Error: ' + err.message, 'err');
+            }
+        }
+
+        // ── S3 upload ──
+        function makeAwsClient(cfg) {
+            if (typeof AwsClient === 'undefined') {
+                throw new Error('aws4fetch failed to load');
+            }
+            return new AwsClient({
+                accessKeyId:     cfg.accessKeyId,
+                secretAccessKey: cfg.secretAccessKey,
+                sessionToken:    cfg.sessionToken || undefined,
+                service: 's3',
+                region:  cfg.region,
+            });
+        }
+
+        /**
+         * Build an S3 object URL honoring path-style vs virtual-hosted-style.
+         * - Virtual: https://bucket.s3.region.amazonaws.com/prefix/key
+         * - Path:    https://endpoint/bucket/prefix/key
+         * For a custom endpoint we always use path-style.
+         */
+        function buildObjectUrl(cfg, key) {
+            const ep = cfg.endpoint.replace(/\/+$/, '');
+            const fullKey = (cfg.prefix || '') + (key || '');
+            const encoded = fullKey.split('/').map(encodeURIComponent).join('/');
+            if (cfg.pathStyle) {
+                return `${ep}/${cfg.bucket}/${encoded}`;
+            }
+            // Detect AWS S3 virtual-hosted-style: inject bucket into host
+            const amzMatch = ep.match(/^(https?:\/\/)(s3(?:[.-][a-z0-9-]+)?\.amazonaws\.com)(.*)$/i);
+            if (amzMatch) {
+                return `${amzMatch[1]}${cfg.bucket}.${amzMatch[2]}${amzMatch[3]}/${encoded}`;
+            }
+            // Default to path-style for unknown endpoints
+            return `${ep}/${cfg.bucket}/${encoded}`;
+        }
+
+        /**
+         * Public-facing URL to fetch the uploaded object (what we put in ?md=).
+         * Same construction as buildObjectUrl for public-read objects; for
+         * private objects the caller would need a presigned URL (not implemented).
+         */
+        function publicObjectUrl(cfg, key) {
+            return buildObjectUrl(cfg, key);
+        }
+
+        function openUploadPicker() {
+            if (!hasUploadCreds()) {
+                showToast('Configure S3 settings first');
+                openSettings();
+                return;
+            }
+            document.getElementById('upload-file-input').click();
+        }
+
+        async function handleUploadFile(file) {
+            const cfg = getS3Config();
+            if (!hasUploadCreds(cfg)) { openSettings(); return; }
+            if (!file) return;
+
+            const status = document.getElementById('upload-status');
+            const statusText = document.getElementById('upload-status-text');
+            status.classList.add('visible');
+            statusText.textContent = `Uploading ${file.name}…`;
+
+            try {
+                // Render locally first so the user sees content immediately
+                await renderMarkdownFile(file);
+
+                const client = makeAwsClient(cfg);
+                const key = sanitizeKey(file.name);
+                const url = buildObjectUrl(cfg, key);
+                const headers = {
+                    'Content-Type': file.type || 'text/markdown; charset=utf-8',
+                };
+                if (cfg.publicRead) headers['x-amz-acl'] = 'public-read';
+
+                const res = await client.fetch(url, {
+                    method: 'PUT',
+                    body: file,
+                    headers,
+                });
+
+                if (!res.ok) {
+                    const body = await res.text().catch(() => '');
+                    throw new Error(`HTTP ${res.status} — ${body.slice(0, 240)}`);
+                }
+
+                // Rewrite the URL so the share-link reflects the uploaded file
+                const publicUrl = publicObjectUrl(cfg, key);
+                const params = new URLSearchParams(window.location.search);
+                // Prefer the filename (short, shareable) if it matches the configured baseUrl
+                if (cfg.baseUrl && publicUrl.startsWith(cfg.baseUrl)) {
+                    params.set('md', publicUrl.slice(cfg.baseUrl.length));
+                } else {
+                    params.set('md', publicUrl);
+                }
+                history.replaceState(null, '', '?' + params.toString());
+                currentUrl = publicUrl;
+
+                statusText.textContent = `Uploaded ${file.name}`;
+                showToast(`Uploaded to ${cfg.bucket}/${(cfg.prefix || '') + key}`, 3500);
+                setTimeout(() => status.classList.remove('visible'), 2000);
+            } catch (err) {
+                status.classList.remove('visible');
+                showToast('Upload failed: ' + err.message, 5000);
+                // Surface a persistent error inline so the user can actually read it
+                const content = document.getElementById('content');
+                const errDiv = document.createElement('div');
+                errDiv.className = 'error';
+                errDiv.innerHTML = `<strong>Upload failed:</strong> ${escHtml(err.message)}<br>
+                    <small>Check the bucket's CORS config allows <code>PUT</code> from this origin,
+                    and that the IAM policy grants <code>s3:PutObject</code>.</small>`;
+                content.prepend(errDiv);
+            }
+        }
+
+        /** Sanitize a filename into a safe S3 key segment. */
+        function sanitizeKey(name) {
+            return name
+                .replace(/[^\w.\-]+/g, '_')
+                .replace(/^_+|_+$/g, '')
+                .slice(0, 200) || 'upload.md';
+        }
+
+        // Wire up the upload file input
+        (function wireUploadInput() {
+            const input = document.getElementById('upload-file-input');
+            if (!input) return;
+            input.addEventListener('change', () => {
+                const f = input.files && input.files[0];
+                input.value = ''; // allow re-selecting the same file
+                if (f) handleUploadFile(f);
+            });
+        })();
+
+        refreshUploadButton();
+
         // ── marked config ──
         marked.setOptions({
             breaks: true,
@@ -1498,6 +2043,13 @@
         // ── File Picker UI (empty state) ──
         function showFilePicker() {
             const content = document.getElementById('content');
+            const uploadHint = hasUploadCreds()
+                ? `<div class="file-picker-hint" style="margin-top:1rem">
+                       Or <a href="#" onclick="event.preventDefault();event.stopPropagation();openUploadPicker()">upload to your S3 bucket</a>
+                   </div>`
+                : `<div class="file-picker-hint" style="margin-top:1rem">
+                       Want to upload? <a href="#" onclick="event.preventDefault();event.stopPropagation();openSettings()">Configure S3</a>
+                   </div>`;
             content.innerHTML = `
                 <div class="file-picker" id="file-picker" tabindex="0" role="button"
                      aria-label="Open markdown file">
@@ -1515,6 +2067,7 @@
                         Tip: you can also pass <code>?md=URL</code> or use a path slug like
                         <code>/md/readme</code>
                     </div>
+                    ${uploadHint}
                 </div>`;
             const picker = document.getElementById('file-picker');
             const input = document.getElementById('file-input');
@@ -1569,6 +2122,14 @@
                 if (file) renderMarkdownFile(file);
             });
         })();
+
+        // Escape closes the settings modal
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                const modal = document.getElementById('settings-modal');
+                if (modal && modal.classList.contains('active')) closeSettings();
+            }
+        });
     </script>
 </body>
 </html>
